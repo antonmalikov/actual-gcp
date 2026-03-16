@@ -4,21 +4,6 @@ locals {
     ${yamlencode({
   write_files = [
     {
-      path        = "/etc/systemd/system/duckdns.service"
-      permissions = "0644"
-      owner       = "root"
-      content     = <<-EOT1
-                [Unit]
-                Description=Start DuckDNS
-
-                [Service]
-                ExecStart=/usr/bin/docker run --rm -e SUBDOMAINS=${var.duckdns_subdomains} -e TOKEN=${var.duckdns_token} --name=duckdns lscr.io/linuxserver/duckdns:latest
-
-                ExecStop=/usr/bin/docker stop duckdns
-                ExecStopPost=/usr/bin/docker rm duckdns
-                EOT1
-    },
-    {
       path        = "/etc/systemd/system/caddy.service"
       permissions = "0644"
       owner       = "root"
@@ -27,7 +12,7 @@ locals {
               Description=Start Caddy
 
               [Service]
-              ExecStart=/usr/bin/docker run --rm --network custom-bridge -p 443:443 --mount 'type=bind,source=/mnt/disks/data/caddy/Caddyfile,target=/etc/caddy/Caddyfile,readonly' --mount 'type=bind,source=/mnt/disks/data/caddy/data,target=/data' --mount 'type=bind,source=/mnt/disks/data/caddy/config,target=/config' --name=caddy caddy:alpine
+              ExecStart=/usr/bin/docker run --rm --network custom-bridge -p 443:443 -e CLOUDFLARE_API_TOKEN=${var.cloudflare_token} --mount 'type=bind,source=/mnt/disks/data/caddy/Caddyfile,target=/etc/caddy/Caddyfile,readonly' --mount 'type=bind,source=/mnt/disks/data/caddy/data,target=/data' --mount 'type=bind,source=/mnt/disks/data/caddy/config,target=/config' --name=caddy serfriz/caddy-cloudflare-ddns:latest
               ExecStop=/usr/bin/docker stop caddy
               ExecStopPost=/usr/bin/docker rm caddy
               EOT2
@@ -41,7 +26,7 @@ locals {
                 Description=Start Actual
 
                 [Service]
-                ExecStart=/usr/bin/docker run --rm --network custom-bridge -p '[::1]:5006:5006' --mount 'type=bind,source=/mnt/disks/data/actual-data,target=/data' --name=actual_server actualbudget/actual-server:latest
+                ExecStart=/usr/bin/docker run --rm --network custom-bridge -p '[::1]:5006:5006' --mount 'type=bind,source=/mnt/disks/data/actual-data,target=/data' --env-file /tmp/.env --name=actual_server actualbudget/actual-server:latest
                 ExecStop=/usr/bin/docker stop actual_server
                 ExecStopPost=/usr/bin/docker rm actual_server
                 EOT3
@@ -51,10 +36,26 @@ locals {
       permissions = "0644"
       owner       = "root"
       content     = <<-EOT4
-            ${var.actual_fqdn} {
+            {
+                dynamic_dns {
+                    provider cloudflare {env.CLOUDFLARE_API_TOKEN}
+                    domains {
+                        ${var.actual_tld} ${var.actual_subdomain}
+                    }
+                    ip_source simple_http https://icanhazip.com
+                    ip_source simple_http https://api64.ipify.org
+                    check_interval 1d
+                   ttl 5m
+                   versions ipv4
+               }
+            }
+
+            ${var.actual_subdomain}.${var.actual_tld} {
                 encode gzip zstd
                 reverse_proxy actual_server:5006
             }
+
+
             EOT4
     },
     {
@@ -73,6 +74,18 @@ locals {
         mkdir -p /mnt/disks/data/actual-data
         cp /tmp/Caddyfile /mnt/disks/data/caddy/Caddyfile
         EOT5
+    },
+    {
+      path        = "/tmp/.env"
+      permissions = "0544"
+      owner       = "root"
+      content     = <<-EOT6
+        ACTUAL_OPENID_DISCOVERY_URL=${var.openid_discovery_url}
+        ACTUAL_OPENID_CLIENT_ID=${var.openid_clientid}
+        ACTUAL_OPENID_CLIENT_SECRET=${var.openid_secret}
+        ACTUAL_OPENID_SERVER_HOSTNAME=https://${var.actual_subdomain}.${var.actual_tld}
+        ACTUAL_OPENID_ENFORCE=true
+        EOT6
     }
   ]
 
@@ -80,8 +93,7 @@ locals {
     "docker network create custom-bridge",
     "systemctl daemon-reload",
     "systemctl start caddy.service",
-    "systemctl start actual.service",
-    "systemctl start duckdns.service"
+    "systemctl start actual.service"
   ]
 
   bootcmd = [

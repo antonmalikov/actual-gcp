@@ -55,6 +55,8 @@ Some notes about the architecture of this setup:
     * `gcloud auth application-default login`
 8. Run the following command to enable the API services necessary for Terraform to run and configure the rest of the environment:
     * `gcloud services enable cloudresourcemanager.googleapis.com`
+    * `gcloud services enable serviceusage.googleapis.com`
+    * `gcloud services enable cloudbilling.googleapis.com`
 9. If this is a new Google Cloud environment, I recommend running the following commands to delete the default networking configuration, as new configurations will be deployed via Terraform:
     * `gcloud compute firewall-rules list`
     * For each firewall rule listed, run `gcloud compute firewall-rules delete rulename`
