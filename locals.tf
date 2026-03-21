@@ -22,14 +22,43 @@ locals {
       permissions = "0644"
       owner       = "root"
       content     = <<-EOT3
-                [Unit]
-                Description=Start Actual
+                  [Unit]
+                  Description=Start Actual
 
-                [Service]
-                ExecStart=/usr/bin/docker run --rm --network custom-bridge -p '[::1]:5006:5006' --mount 'type=bind,source=/mnt/disks/data/actual-data,target=/data' --env-file /tmp/.env --name=actual_server actualbudget/actual-server:latest
-                ExecStop=/usr/bin/docker stop actual_server
-                ExecStopPost=/usr/bin/docker rm actual_server
-                EOT3
+                  [Service]
+                  ExecStart=/usr/bin/docker run --rm --network custom-bridge -p '[::1]:5006:5006' --mount 'type=bind,source=/mnt/disks/data/actual-data,target=/data' --env-file /mnt/disks/data/.env --name=actual_server actualbudget/actual-server:latest
+                  ExecStop=/usr/bin/docker stop actual_server
+                  ExecStopPost=/usr/bin/docker rm actual_server
+                  EOT3
+    },
+    {
+      path        = "/etc/systemd/system/actualtap.service"
+      permissions = "0644"
+      owner       = "root"
+      content     = <<-EOT7
+                  [Unit]
+                  Description=Start Actual Tap Service
+
+                  [Service]
+                  ExecStart=/usr/bin/docker run --rm --network custom-bridge --mount 'type=bind,source=/mnt/disks/data/actualtap,target=/config' --name=actual_tap ghcr.io/bobokun/actualtap-py:latest
+
+                  ExecStop=/usr/bin/docker stop actual_tap
+                  ExecStopPost=/usr/bin/docker rm actual_tap
+                  EOT7
+    },
+    {
+      path        = "/etc/systemd/system/actualhttp.service"
+      permissions = "0644"
+      owner       = "root"
+      content     = <<-EOT8
+                  [Unit]
+                  Description=Start Actual Http Api
+
+                  [Service]
+                  ExecStart=/usr/bin/docker run -d --name actual_http --rm --network custom-bridge -v "/mnt/disks/data/actualhttp/data:/data:rw" --env-file /mnt/disks/data/actualhttp/.env jhonderson/actual-http-api:26.3.0
+                  ExecStop=/usr/bin/docker stop actual_http
+                  ExecStopPost=/usr/bin/docker rm actual_http
+                  EOT8
     },
     {
       path        = "/tmp/Caddyfile"
@@ -51,7 +80,17 @@ locals {
             }
 
             ${var.actual_subdomain}.${var.actual_tld} {
+                @actualapi {
+                    path /api-docs
+                    path /api-docs/*
+                    path /v1
+                    path /v1/*
+                }
+
                 encode gzip zstd
+                reverse_proxy /transactions/* actual_tap:8000
+                reverse_proxy /transactions actual_tap:8000
+                reverse_proxy @actualapi actual_http:5007
                 reverse_proxy actual_server:5006
             }
 
@@ -72,7 +111,12 @@ locals {
         mkdir -p /mnt/disks/data/caddy/data
         mkdir -p /mnt/disks/data/caddy/config
         mkdir -p /mnt/disks/data/actual-data
+        mkdir -p /mnt/disks/data/actualhttp
+        mkdir -p /mnt/disks/data/actualhttp/data
+        mkdir -p /mnt/disks/data/actualtap
         cp /tmp/Caddyfile /mnt/disks/data/caddy/Caddyfile
+        cp /tmp/.env /mnt/disks/data/.env
+        cp /tmp/.http.env /mnt/disks/data/actualhttp/.env
         EOT5
     },
     {
@@ -84,8 +128,20 @@ locals {
         ACTUAL_OPENID_CLIENT_ID=${var.openid_clientid}
         ACTUAL_OPENID_CLIENT_SECRET=${var.openid_secret}
         ACTUAL_OPENID_SERVER_HOSTNAME=https://${var.actual_subdomain}.${var.actual_tld}
-        ACTUAL_OPENID_ENFORCE=true
+        ACTUAL_OPENID_ENFORCE=false
         EOT6
+    },
+    {
+      path        = "/tmp/.http.env"
+      permissions = "0544"
+      owner       = "root"
+      content     = <<-EOT9
+        ACTUAL_SERVER_URL=http://actual_server:5006/
+        ACTUAL_SERVER_PASSWORD=PASSWORD
+        API_KEY=KEY
+        SWAGGER_HOST=${var.actual_subdomain}.${var.actual_tld}
+        SWAGGER_PORT=443
+        EOT9
     }
   ]
 
@@ -93,7 +149,9 @@ locals {
     "docker network create custom-bridge",
     "systemctl daemon-reload",
     "systemctl start caddy.service",
-    "systemctl start actual.service"
+    "systemctl start actual.service",
+    "systemctl start actualtap.service".
+    "systemctl start actualhttp.service"
   ]
 
   bootcmd = [
