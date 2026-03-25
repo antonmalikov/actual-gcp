@@ -3,6 +3,12 @@ resource "google_service_account" "container_host" {
   display_name = "Custom SA for Container Host VM Instance"
 }
 
+resource "google_project_iam_member" "container_host_logging_role" {
+  project = data.google_project.project.id
+  role    = "roles/logging.logWriter"
+  member  = "serviceAccount:${google_service_account.container_host.email}"
+}
+
 resource "google_compute_disk" "container_host_boot_disk" {
   name  = "container-host-boot-disk"
   type  = "pd-standard"
@@ -51,6 +57,7 @@ resource "google_compute_instance" "container_host" {
   metadata = {
     ssh-keys  = "${var.user}:${fileexists(var.public_key_path) ? file(var.public_key_path) : var.public_key}"
     user-data = local.cloud_config
+    google-logging-enabled  = true
   }
 
   scheduling {

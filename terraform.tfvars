@@ -8,5 +8,6 @@ project_enabled_services = [
   "cloudresourcemanager.googleapis.com",
   "compute.googleapis.com",
   "iam.googleapis.com",
+  "logging.googleapis.com",
   "networkmanagement.googleapis.com"
 ]

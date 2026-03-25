@@ -55,7 +55,7 @@ locals {
                   Description=Start Actual Http Api
 
                   [Service]
-                  ExecStart=/usr/bin/docker run -d --name actual_http --rm --network custom-bridge -v "/mnt/disks/data/actualhttp/data:/data:rw" --env-file /mnt/disks/data/actualhttp/.env jhonderson/actual-http-api:26.3.0
+                  ExecStart=/usr/bin/docker run --name actual_http --rm --network custom-bridge --mount 'type=bind,source=/mnt/disks/data/actualhttp,target=/data' --env-file /mnt/disks/data/actualhttp/.env jhonderson/actual-http-api:26.3.0
                   ExecStop=/usr/bin/docker stop actual_http
                   ExecStopPost=/usr/bin/docker rm actual_http
                   EOT8
@@ -116,7 +116,7 @@ locals {
         mkdir -p /mnt/disks/data/actualtap
         cp /tmp/Caddyfile /mnt/disks/data/caddy/Caddyfile
         cp /tmp/.env /mnt/disks/data/.env
-        cp /tmp/.http.env /mnt/disks/data/actualhttp/.env
+        cp -n /tmp/.http.env /mnt/disks/data/actualhttp/.env
         EOT5
     },
     {
@@ -150,7 +150,7 @@ locals {
     "systemctl daemon-reload",
     "systemctl start caddy.service",
     "systemctl start actual.service",
-    "systemctl start actualtap.service".
+    "systemctl start actualtap.service",
     "systemctl start actualhttp.service"
   ]
 
